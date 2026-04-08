@@ -3,8 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
-import os, zipfile
-from io import BytesIO
+import os
 
 # ---------------- CONFIG ----------------
 app = Flask(__name__)
@@ -23,10 +22,9 @@ CORS(app)
 
 STYLE = """
 <style>
-body{background:#111;color:#fff;font-family:sans-serif;padding:10px;margin:0;}
-a,button{color:#0f0;text-decoration:none;display:inline-block;margin:5px;padding:10px;border-radius:5px;background:#000;border:1px solid #0f0;cursor:pointer;}
-video{width:100%;max-width:600px;}
-iframe{width:100%;height:400px;border:1px solid #0f0;}
+body{background:#111;color:#fff;font-family:sans-serif;padding:10px;}
+a,button{color:#0f0;margin:5px;padding:10px;border:1px solid #0f0;}
+video,iframe{width:100%;max-width:600px;margin:10px 0;}
 input,select{margin:5px;padding:6px;width:95%;}
 </style>
 """
@@ -39,8 +37,6 @@ class User(db.Model):
     mobile = db.Column(db.String(15), unique=True)
     password = db.Column(db.String(200))
     course = db.Column(db.String(100))
-    score = db.Column(db.Integer, default=0)
-    progress = db.Column(db.Integer, default=0)
 
 
 class Content(db.Model):
@@ -48,9 +44,8 @@ class Content(db.Model):
     title = db.Column(db.String(200))
     type = db.Column(db.String(50))
     filename = db.Column(db.String(500))
-    link = db.Column(db.String(500))   # ✅ NEW
+    link = db.Column(db.String(500))
     course = db.Column(db.String(100))
-    order = db.Column(db.Integer)
 
 
 COURSES = ["IIOT", "IR&DMT", "CNC", "Plumber", "MMV"]
@@ -102,11 +97,12 @@ def login():
         if user and check_password_hash(user.password, request.form['password']):
             session['user'] = user.id
             return redirect('/dashboard')
+
     return STYLE + """
     <h2>Login</h2>
     <form method='POST'>
-    <input name='email'>
-    <input type='password' name='password'>
+    <input name='email' placeholder='Email'><br>
+    <input type='password' name='password'><br>
     <button>Login</button>
     </form>
     """
@@ -125,16 +121,18 @@ def dashboard():
     for c in contents:
         html += f"<h3>{c.title}</h3>"
 
-        if c.type in ['theory','practical']:
-            if c.link:
-                html += f"<iframe src='{c.link}'></iframe>"
-            else:
-                html += f"<video controls src='/static/{c.filename}'></video>"
+        if c.link:
+            link = c.link
 
-        else:
-            if c.link:
-                html += f"<iframe src='{c.link}'></iframe>"
-                html += f"<a href='{c.link}' target='_blank'>Open</a>"
+            # ✅ YouTube auto fix
+            if "watch?v=" in link:
+                link = link.replace("watch?v=", "embed/")
+
+            html += f"<iframe src='{link}' allowfullscreen></iframe>"
+
+        elif c.filename:
+            if c.type in ['theory','practical']:
+                html += f"<video controls src='/static/{c.filename}'></video>"
             else:
                 html += f"<iframe src='/static/{c.filename}'></iframe>"
                 html += f"<a href='/static/{c.filename}' download>Download</a>"
@@ -145,17 +143,19 @@ def dashboard():
 # ---------------- ADMIN LOGIN ----------------
 @app.route('/admin_login', methods=['GET','POST'])
 def admin_login():
-    if request.form.get('u') == 'admin' and request.form.get('p') == 'admin123':
-        session['admin'] = True
-        return redirect('/admin')
+    if request.method == 'POST':
+        if request.form.get('u') == 'admin' and request.form.get('p') == 'admin123':
+            session['admin'] = True
+            return redirect('/admin')
 
     return STYLE + """
     <h2>Admin Login</h2>
     <form method='POST'>
-    <input name='u'>
-    <input name='p' type='password'>
+    <input name='u' placeholder='Enter Username'><br>
+    <input name='p' type='password' placeholder='Enter Password'><br>
     <button>Login</button>
     </form>
+    <p>Username: admin | Password: admin123</p>
     """
 
 # ---------------- ADMIN PANEL ----------------
@@ -178,8 +178,7 @@ def admin():
             type=request.form['type'],
             filename=filename,
             link=link,
-            course=request.form['course'],
-            order=0
+            course=request.form['course']
         ))
         db.session.commit()
 
@@ -190,6 +189,7 @@ def admin():
 
     <form method='POST' enctype='multipart/form-data'>
     <input name='title' placeholder='Title'><br>
+
     <select name='course'>{options}</select><br>
 
     <select name='type'>
@@ -199,7 +199,7 @@ def admin():
     <option value='pyq'>PYQ</option>
     </select><br>
 
-    <input name='link' placeholder='Paste Link (YouTube/Drive)'><br>
+    <input name='link' placeholder='Paste YouTube / Drive Link'><br>
     <input type='file' name='file'><br>
 
     <button>Upload</button>
